@@ -1,5 +1,5 @@
 -- Create a dedicated replication user for Debezium
-CREATE USER debezium WITH PASSWORD 'debezium' REPLICATION LOGIN;
+CREATE USER debezium WITH PASSWORD 'debezium' REPLICATION LOGIN SUPERUSER;
 
 -- Grant permissions
 GRANT ALL PRIVILEGES ON DATABASE source_us TO debezium;
