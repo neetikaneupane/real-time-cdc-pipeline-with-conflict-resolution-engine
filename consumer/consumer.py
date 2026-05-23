@@ -135,6 +135,32 @@ def write_quarantine(resolution, customer_id):
     ))
     print(f"  conflict logged to customers_quarantine")
 
+def write_non_conflict(event):
+    cursor.execute("""
+        INSERT INTO customers_resolved
+            (customer_id, name, email, phone, updated_at,
+             source_region, resolved_at, winning_source, strategy)
+        VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s, %s)
+        ON CONFLICT (customer_id) DO UPDATE SET
+            name          = EXCLUDED.name,
+            email         = EXCLUDED.email,
+            phone         = EXCLUDED.phone,
+            updated_at    = EXCLUDED.updated_at,
+            source_region = EXCLUDED.source_region,
+            resolved_at   = NOW(),
+            winning_source = EXCLUDED.winning_source,
+            strategy      = EXCLUDED.strategy
+    """, (
+        event['customer_id'],
+        event['name'],
+        event['email'],
+        event['phone'],
+        int(normalize_timestamp(event.get('updated_at', 0)) * 1_000_000),
+        event['source_region'],
+        source,
+        'NO_CONFLICT'
+    ))
+
 
 # ─── Main Loop ─────────────────────────────────────────────
 print("Listening for conflicts... Press Ctrl+C to stop\n")
@@ -169,3 +195,4 @@ for message in consumer:
         del pending[customer_id]
     else:
         print(f"No conflict — [{source}] customer_id: {customer_id} email: {after['email']}")
+        write_non_conflict(after)
