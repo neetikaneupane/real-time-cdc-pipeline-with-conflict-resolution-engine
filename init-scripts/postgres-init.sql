@@ -1,10 +1,6 @@
 -- Create a dedicated replication user for Debezium
 CREATE USER debezium WITH PASSWORD 'debezium' REPLICATION LOGIN;
 
--- Create your database
-CREATE DATABASE source_us;
-\c source_us;
-
 -- Grant permissions
 GRANT ALL PRIVILEGES ON DATABASE source_us TO debezium;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO debezium;

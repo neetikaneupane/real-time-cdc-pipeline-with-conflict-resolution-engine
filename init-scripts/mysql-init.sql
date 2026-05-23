@@ -1,7 +1,5 @@
-CREATE DATABASE source_eu;
-USE source_eu;
-
-CREATE TABLE customers (
+-- Create the table
+CREATE TABLE source_eu.customers (
     customer_id   VARCHAR(36) PRIMARY KEY,
     name          VARCHAR(255),
     email         VARCHAR(255),
