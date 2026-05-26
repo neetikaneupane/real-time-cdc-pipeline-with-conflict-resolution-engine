@@ -1,0 +1,14 @@
+tables:
+  - name: customers
+    source_topic_a: source_a.public.customers
+    source_topic_b: source_b.source_eu.customers
+    primary_key: customer_id
+    strategy: last_write_wins
+    destination_table: customers_resolved
+
+  - name: orders
+    source_topic_a: source_a.public.orders
+    source_topic_b: source_b.source_eu.orders
+    primary_key: order_id
+    strategy: source_priority
+    destination_table: orders_resolved
