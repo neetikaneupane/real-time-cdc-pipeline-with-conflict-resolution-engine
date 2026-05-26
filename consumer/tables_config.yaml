@@ -3,7 +3,12 @@ tables:
     source_topic_a: source_a.public.customers
     source_topic_b: source_b.source_eu.customers
     primary_key: customer_id
-    strategy: last_write_wins
+    strategy: field_merge
+    field_rules:
+      email: latest
+      phone: non_null
+      name: source_a
+      source_region: source_a
     destination_table: customers_resolved
 
   - name: orders
