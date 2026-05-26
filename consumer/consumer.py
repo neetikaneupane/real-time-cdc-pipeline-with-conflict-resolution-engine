@@ -56,6 +56,18 @@ def normalize_timestamp(value):
         return value / 1_000_000
     return 0
 
+def clean_value(key, value):
+    # MySQL sends DECIMAL as base64 encoded bytes — decode it
+    if isinstance(value, str) and len(value) <= 8 and key == 'amount':
+        try:
+            import base64
+            decoded = base64.b64decode(value)
+            # Convert bytes to float
+            import struct
+            return float(int.from_bytes(decoded, byteorder='big')) / 100
+        except:
+            return value
+    return value
 
 # ─── Conflict Checker ──────────────────────────────────────
 def check_conflict(table_name, primary_key, source, event):
@@ -128,6 +140,8 @@ def write_resolved(resolution, table_config):
         val = r[f]
         if f == 'updated_at':
             val = int(normalize_timestamp(val) * 1_000_000)
+        else:
+            val = clean_value(f, val)
         values.append(val)
 
     # Add metadata columns
