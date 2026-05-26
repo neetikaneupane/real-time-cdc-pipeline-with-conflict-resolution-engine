@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="30">
+    <title>CDC Pipeline Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f1117;
+            color: #e2e8f0;
+            padding: 30px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #fff;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 30px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #1e2130;
+            border: 1px solid #2d3148;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .card .label {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+        }
+
+        .card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .card .value.green { color: #22c55e; }
+        .card .value.yellow { color: #eab308; }
+        .card .value.red { color: #ef4444; }
+
+        .section {
+            background: #1e2130;
+            border: 1px solid #2d3148;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            padding: 8px 12px;
+            color: #64748b;
+            font-weight: 500;
+            border-bottom: 1px solid #2d3148;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #1a1f35;
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge.green { background: #14532d; color: #22c55e; }
+        .badge.blue  { background: #1e3a5f; color: #60a5fa; }
+        .badge.purple { background: #3b1f5e; color: #c084fc; }
+        .badge.yellow { background: #422006; color: #eab308; }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .status-text {
+            font-size: 13px;
+            color: #22c55e;
+            font-weight: 600;
+        }
+
+        .refresh-note {
+            font-size: 12px;
+            color: #64748b;
+            margin-left: auto;
+        }
+
+        .empty {
+            color: #64748b;
+            font-size: 13px;
+            padding: 16px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>CDC Pipeline Dashboard</h1>
+    <p class="subtitle">Real-time conflict detection and resolution monitoring</p>
+
+    <div class="status-bar">
+        <div class="dot"></div>
+        <span class="status-text">PIPELINE RUNNING</span>
+        <span class="refresh-note">Auto-refreshes every 30 seconds</span>
+    </div>
+
+    <!-- Metric Cards -->
+    <div class="grid">
+        <div class="card">
+            <div class="label">Resolved Records</div>
+            <div class="value green">{{ metrics.resolved_records }}</div>
+        </div>
+        <div class="card">
+            <div class="label">Total Conflicts</div>
+            <div class="value yellow">{{ metrics.total_conflicts }}</div>
+        </div>
+        <div class="card">
+            <div class="label">Customers Conflicted</div>
+            <div class="value yellow">{{ metrics.unique_customers_conflicted }}</div>
+        </div>
+        <div class="card">
+            <div class="label">Tables Watched</div>
+            <div class="value">{{ metrics.tables_watched }}</div>
+        </div>
+    </div>
+
+    <!-- Resolved Per Table -->
+    <div class="section">
+        <h2>Records Per Table</h2>
+        {% if table_counts %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Resolved Records</th>
+                    <th>Conflicts Logged</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_counts %}
+                <tr>
+                    <td>{{ row.table }}</td>
+                    <td>{{ row.resolved }}</td>
+                    <td>{{ row.conflicts }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">No data yet</div>
+        {% endif %}
+    </div>
+
+    <!-- Recent Conflicts -->
+    <div class="section">
+        <h2>Recent Conflicts</h2>
+        {% if conflicts %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer ID</th>
+                    <th>Winner</th>
+                    <th>Loser</th>
+                    <th>Winning Email</th>
+                    <th>Losing Email</th>
+                    <th>Strategy</th>
+                    <th>Detected At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in conflicts %}
+                <tr>
+                    <td>{{ c.customer_id }}</td>
+                    <td><span class="badge green">{{ c.winner }}</span></td>
+                    <td><span class="badge yellow">{{ c.loser }}</span></td>
+                    <td>{{ c.winning_email }}</td>
+                    <td>{{ c.losing_email }}</td>
+                    <td><span class="badge blue">{{ c.strategy }}</span></td>
+                    <td>{{ c.detected_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">No conflicts logged yet</div>
+        {% endif %}
+    </div>
+
+    <!-- Last Activity -->
+    <div class="section">
+        <h2>Last Activity</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Event</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Last resolved record written</td>
+                    <td>{{ metrics.last_resolved_at or 'Never' }}</td>
+                </tr>
+                <tr>
+                    <td>Last conflict detected</td>
+                    <td>{{ metrics.last_conflict_at or 'Never' }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+</body>
+</html>
