@@ -104,17 +104,67 @@ def last_write_wins(sources):
 
 def source_priority(sources):
     source_list = list(sources.keys())
-    # SOURCE_A always wins
     if source_list[0] == 'SOURCE_A':
         return source_list[0], source_list[1]
     return source_list[1], source_list[0]
+
+def field_merge(sources, field_rules):
+    source_list = list(sources.keys())
+    event_a = sources[source_list[0]]['event']
+    event_b = sources[source_list[1]]['event']
+
+    # figure out which source is SOURCE_A and SOURCE_B
+    source_a_event = event_a if source_list[0] == 'SOURCE_A' else event_b
+    source_b_event = event_b if source_list[0] == 'SOURCE_A' else event_a
+
+    merged = {}
+
+    # carry over all fields first using source_a as base
+    for field in source_a_event:
+        merged[field] = source_a_event[field]
+
+    # now apply field rules
+    for field, rule in field_rules.items():
+        val_a = source_a_event.get(field)
+        val_b = source_b_event.get(field)
+
+        if rule == 'latest':
+            ts_a = normalize_timestamp(source_a_event.get('updated_at', 0))
+            ts_b = normalize_timestamp(source_b_event.get('updated_at', 0))
+            merged[field] = val_a if ts_a >= ts_b else val_b
+
+        elif rule == 'non_null':
+            merged[field] = val_a if val_a is not None else val_b
+
+        elif rule == 'source_a':
+            merged[field] = val_a
+
+        elif rule == 'source_b':
+            merged[field] = val_b
+
+        elif rule == 'longest':
+            merged[field] = val_a if len(str(val_a or '')) >= len(str(val_b or '')) else val_b
+
+    return merged
 
 STRATEGIES = {
     'last_write_wins': last_write_wins,
     'source_priority': source_priority
 }
 
-def resolve_conflict(sources, strategy_name):
+def resolve_conflict(sources, strategy_name, table_cfg=None):
+    if strategy_name == 'field_merge':
+        field_rules = table_cfg.get('field_rules', {})
+        merged = field_merge(sources, field_rules)
+        source_list = list(sources.keys())
+        return {
+            'resolved_value': merged,
+            'losing_value':   sources[source_list[1]]['event'],
+            'winning_source': 'FIELD_MERGE',
+            'losing_source':  'BOTH',
+            'strategy':       'FIELD_MERGE'
+        }
+
     strategy_fn = STRATEGIES.get(strategy_name, last_write_wins)
     winner, loser = strategy_fn(sources)
     return {
@@ -124,6 +174,8 @@ def resolve_conflict(sources, strategy_name):
         'losing_source':  loser,
         'strategy':       strategy_name.upper()
     }
+
+
 
 
 # ─── Generic Write to Resolved Table ──────────────────────
@@ -207,7 +259,7 @@ for message in consumer:
 
     if is_conflict:
         print(f"CONFLICT [{table_name}] — {pk}: {pk_value}")
-        resolution = resolve_conflict(sources, strategy)
+        resolution = resolve_conflict(sources, strategy, table_cfg)
         print(f"  WINNER: {resolution['winning_source']} via {resolution['strategy']}")
         write_resolved(resolution, table_cfg)
         write_quarantine(resolution, table_cfg, pk_value)
