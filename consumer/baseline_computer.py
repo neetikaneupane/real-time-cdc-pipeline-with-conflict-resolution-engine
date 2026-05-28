@@ -84,7 +84,7 @@ def run_baseline_computation():
         return
 
     for table in tables:
-        result = compute_baseline(cursor, table, window_minutes=60)
+        result = compute_baseline(cursor, table, window_minutes=120)
         print(f"\nTable: {result['table_name']}")
         print(f"  Mean conflicts/min : {result['mean']}")
         print(f"  Stddev             : {result['stddev']}")
@@ -103,7 +103,7 @@ scheduler = BlockingScheduler()
 scheduler.add_job(
     run_baseline_computation,
     trigger='interval',
-    minutes=5,
+    seconds=30,
     next_run_time=datetime.now()
 )
 
