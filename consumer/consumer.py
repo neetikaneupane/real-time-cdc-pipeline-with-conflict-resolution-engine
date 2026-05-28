@@ -188,6 +188,23 @@ def write_quarantine(resolution, table_cfg, pk_value):
     """, (pk_value, resolution['winning_source'], resolution['losing_source'], resolution['strategy']))
     print(f"  conflict logged to {table_name}_quarantine")
 
+# ─── Write Conflict Metric ─────────────────────────────────
+def write_conflict_metric(table_name, event_type, strategy=None,
+                          resolution_ms=None, pk_value=None, winning_source=None):
+    cursor.execute("""
+        INSERT INTO conflict_metrics
+            (recorded_at, table_name, event_type, strategy,
+             resolution_ms, customer_id, winning_source)
+        VALUES (NOW(), %s, %s, %s, %s, %s, %s)
+    """, (
+        table_name,
+        event_type,
+        strategy,
+        resolution_ms,
+        pk_value,
+        winning_source
+    ))
+
 
 def write_non_conflict(event, table_cfg, source):
     dest_table = table_cfg['destination_table']
@@ -256,11 +273,24 @@ for message in consumer:
         is_conflict, sources = check_conflict(table_name, pk_value, source, after)
 
         if is_conflict:
+            start_time = datetime.now(timezone.utc)
             print(f"CONFLICT [{table_name}] — {pk}: {pk_value}")
             resolution = resolve_conflict(sources, strategy, table_cfg)
             print(f"  WINNER: {resolution['winning_source']} via {resolution['strategy']}")
             write_resolved(resolution, table_cfg)
             write_quarantine(resolution, table_cfg, pk_value)
+
+            # calculate resolution time in milliseconds
+            resolution_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+
+            write_conflict_metric(
+                table_name    = table_name,
+                event_type    = 'conflict_detected',
+                strategy      = resolution['strategy'],
+                resolution_ms = resolution_ms,
+                pk_value      = pk_value,
+                winning_source= resolution['winning_source']
+            )
             print()
             del pending[table_name][pk_value]
         else:
