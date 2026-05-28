@@ -42,7 +42,7 @@ consumer = KafkaConsumer(
 )
 
 pending = defaultdict(lambda: defaultdict(dict))
-CONFLICT_WINDOW_SECONDS = 30
+CONFLICT_WINDOW_SECONDS = 60
 
 
 # ─── Helpers ───────────────────────────────────────────────
