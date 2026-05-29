@@ -208,3 +208,80 @@ def dashboard(request: Request):
         "conflicts":     recent_conflicts
     }
     return templates.TemplateResponse(request=request, name="dashboard.html", context=context)
+
+@app.get("/metrics/timeseries")
+def metrics_timeseries():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # conflicts per minute for last 2 hours
+    cur.execute("""
+        SELECT
+            DATE_TRUNC('minute', recorded_at) AS minute,
+            COUNT(*) AS conflict_count
+        FROM conflict_metrics
+        WHERE recorded_at > NOW() - INTERVAL '2 hours'
+        AND event_type = 'conflict_detected'
+        GROUP BY DATE_TRUNC('minute', recorded_at)
+        ORDER BY minute ASC
+    """)
+    timeseries = [
+        {
+            "minute": row[0].isoformat(),
+            "conflict_count": row[1]
+        }
+        for row in cur.fetchall()
+    ]
+
+    # latest baseline
+    cur.execute("""
+        SELECT mean_per_minute, stddev_per_minute
+        FROM conflict_baselines
+        ORDER BY computed_at DESC
+        LIMIT 1
+    """)
+    baseline_row = cur.fetchone()
+    baseline = {
+        "mean": round(float(baseline_row[0]), 4) if baseline_row else 0,
+        "stddev": round(float(baseline_row[1]), 4) if baseline_row else 0
+    } if baseline_row else {"mean": 0, "stddev": 0}
+
+    conn.close()
+
+    return {
+        "timeseries": timeseries,
+        "baseline": baseline,
+        "warning_threshold":  round(baseline["mean"] + 2 * baseline["stddev"], 4),
+        "critical_threshold": round(baseline["mean"] + 3 * baseline["stddev"], 4)
+    }
+
+
+@app.get("/anomalies")
+def get_anomalies():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, table_name, severity, started_at, ended_at,
+               duration_seconds, peak_rate, baseline_mean,
+               deviation_score, resolved
+        FROM conflict_anomalies
+        ORDER BY started_at DESC
+        LIMIT 20
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "id":               r[0],
+            "table_name":       r[1],
+            "severity":         r[2],
+            "started_at":       r[3],
+            "ended_at":         r[4],
+            "duration_seconds": r[5],
+            "peak_rate":        r[6],
+            "baseline_mean":    r[7],
+            "deviation_score":  r[8],
+            "resolved":         r[9]
+        }
+        for r in rows
+    ]

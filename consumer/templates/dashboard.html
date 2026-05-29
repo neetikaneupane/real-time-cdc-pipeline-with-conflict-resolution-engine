@@ -262,6 +262,144 @@
                     <td>Last conflict detected</td>
                     <td>{{ metrics.last_conflict_at or 'Never' }}</td>
                 </tr>
+                <!-- Time Series Chart -->
+    <div class="section">
+        <h2>Conflict Rate — Last 2 Hours</h2>
+        <canvas id="conflictChart" height="80"></canvas>
+    </div>
+
+    <!-- Anomalies Table -->
+    <div class="section">
+        <h2>Anomaly History</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Severity</th>
+                    <th>Started At</th>
+                    <th>Duration</th>
+                    <th>Peak Rate</th>
+                    <th>Deviation</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="anomaly-rows">
+                <tr><td colspan="7" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+     <script>
+        // ── Fetch timeseries and render chart ──────────────
+        async function loadChart() {
+            const res  = await fetch('/metrics/timeseries');
+            const data = await res.json();
+
+            const labels   = data.timeseries.map(d => d.minute.substring(11, 16));
+            const counts   = data.timeseries.map(d => d.conflict_count);
+            const warning  = data.warning_threshold;
+            const critical = data.critical_threshold;
+            const mean     = data.baseline.mean;
+
+            const ctx = document.getElementById('conflictChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Conflicts/min',
+                            data: counts,
+                            borderColor: '#60a5fa',
+                            backgroundColor: 'rgba(96,165,250,0.1)',
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            tension: 0.3,
+                            fill: true
+                        },
+                        {
+                            label: 'Baseline Mean',
+                            data: Array(labels.length).fill(mean),
+                            borderColor: '#22c55e',
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Warning',
+                            data: Array(labels.length).fill(warning),
+                            borderColor: '#eab308',
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Critical',
+                            data: Array(labels.length).fill(critical),
+                            borderColor: '#ef4444',
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#94a3b8', font: { size: 11 } }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#64748b', font: { size: 10 } },
+                            grid:  { color: '#1e2130' }
+                        },
+                        y: {
+                            ticks: { color: '#64748b' },
+                            grid:  { color: '#1e2130' },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // ── Fetch anomalies and render table ───────────────
+        async function loadAnomalies() {
+            const res  = await fetch('/anomalies');
+            const data = await res.json();
+            const tbody = document.getElementById('anomaly-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No anomalies detected yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(a => `
+                <tr>
+                    <td>${a.table_name}</td>
+                    <td><span class="badge ${a.severity === 'CRITICAL' ? 'red' : 'yellow'}">${a.severity}</span></td>
+                    <td>${a.started_at ? a.started_at.substring(0, 19) : '-'}</td>
+                    <td>${a.duration_seconds ? Math.round(a.duration_seconds / 60) + ' min' : '-'}</td>
+                    <td>${a.peak_rate ? a.peak_rate.toFixed(2) : '-'}</td>
+                    <td>${a.deviation_score ? a.deviation_score.toFixed(2) + ' σ' : '-'}</td>
+                    <td><span class="badge ${a.resolved ? 'green' : 'yellow'}">${a.resolved ? 'RESOLVED' : 'ACTIVE'}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        // Add red badge style
+        document.head.insertAdjacentHTML('beforeend', `
+            <style>
+                .badge.red { background: #450a0a; color: #ef4444; }
+            </style>
+        `);
+
+        loadChart();
+        loadAnomalies();
+     </script>
             </tbody>
         </table>
     </div>
