@@ -5,6 +5,7 @@ from collections import defaultdict
 import psycopg2
 import yaml
 import traceback
+from schema_registry import check_and_update_schema
 
 # ─── Load Table Config ─────────────────────────────────────
 with open('tables_config.yaml', 'r') as f:
@@ -31,6 +32,9 @@ conn = psycopg2.connect(
 )
 conn.autocommit = True
 cursor = conn.cursor()
+
+# second cursor for migrations — same connection
+migration_cursor = conn.cursor()
 
 # ─── Kafka Consumer ────────────────────────────────────────
 consumer = KafkaConsumer(
@@ -269,6 +273,16 @@ for message in consumer:
         source     = table_cfg['source']
         table_name = table_cfg['name']
         strategy   = table_cfg['strategy']
+
+        # check for schema changes on every message
+        check_and_update_schema(
+            cursor         = cursor,
+            dest_cursor    = migration_cursor,
+            table_name     = table_name,
+            source         = source,
+            dest_table     = table_cfg['destination_table'],
+            debezium_message = message.value
+        )
 
         is_conflict, sources = check_conflict(table_name, pk_value, source, after)
 
