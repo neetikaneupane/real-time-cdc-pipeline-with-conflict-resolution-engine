@@ -285,3 +285,69 @@ def get_anomalies():
         }
         for r in rows
     ]
+@app.get("/schema/history")
+def schema_history():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT table_name, source, version, is_current, detected_at
+        FROM schema_registry
+        ORDER BY table_name, detected_at
+    """)
+    rows = cur.fetchall()
+
+    cur.execute("""
+        SELECT table_name, source, change_type, column_name,
+               old_type, new_type, auto_migrated, migration_sql, detected_at
+        FROM schema_change_log
+        ORDER BY detected_at DESC
+        LIMIT 20
+    """)
+    changes = cur.fetchall()
+
+    cur.execute("""
+        SELECT table_name, change_type, details, detected_at, resolved
+        FROM schema_change_alerts
+        ORDER BY detected_at DESC
+    """)
+    alerts = cur.fetchall()
+
+    conn.close()
+
+    return {
+        "registry": [
+            {
+                "table_name":  r[0],
+                "source":      r[1],
+                "version":     r[2],
+                "is_current":  r[3],
+                "detected_at": r[4]
+            }
+            for r in rows
+        ],
+        "changes": [
+            {
+                "table_name":    r[0],
+                "source":        r[1],
+                "change_type":   r[2],
+                "column_name":   r[3],
+                "old_type":      r[4],
+                "new_type":      r[5],
+                "auto_migrated": r[6],
+                "migration_sql": r[7],
+                "detected_at":   r[8]
+            }
+            for r in changes
+        ],
+        "alerts": [
+            {
+                "table_name":  r[0],
+                "change_type": r[1],
+                "details":     r[2],
+                "detected_at": r[3],
+                "resolved":    r[4]
+            }
+            for r in alerts
+        ]
+    }
