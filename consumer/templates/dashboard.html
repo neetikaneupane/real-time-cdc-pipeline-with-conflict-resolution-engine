@@ -262,6 +262,65 @@
                     <td>Last conflict detected</td>
                     <td>{{ metrics.last_conflict_at or 'Never' }}</td>
                 </tr>
+                <!-- Schema Alerts -->
+    <div class="section">
+        <h2>Schema Alerts</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Change Type</th>
+                    <th>Details</th>
+                    <th>Detected At</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="schema-alert-rows">
+                <tr><td colspan="5" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Schema Change Log -->
+    <div class="section">
+        <h2>Schema Change Log</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Source</th>
+                    <th>Change</th>
+                    <th>Column</th>
+                    <th>Old Type</th>
+                    <th>New Type</th>
+                    <th>Auto Migrated</th>
+                    <th>Detected At</th>
+                </tr>
+            </thead>
+            <tbody id="schema-change-rows">
+                <tr><td colspan="8" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Schema Registry -->
+    <div class="section">
+        <h2>Schema Registry</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Source</th>
+                    <th>Version</th>
+                    <th>Current</th>
+                    <th>Detected At</th>
+                </tr>
+            </thead>
+            <tbody id="schema-registry-rows">
+                <tr><td colspan="5" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
                 <!-- Time Series Chart -->
     <div class="section">
         <h2>Conflict Rate — Last 2 Hours</h2>
@@ -396,9 +455,65 @@
                 .badge.red { background: #450a0a; color: #ef4444; }
             </style>
         `);
+        async function loadSchemaData() {
+            const res  = await fetch('/schema/history');
+            const data = await res.json();
+
+            // alerts
+            const alertBody = document.getElementById('schema-alert-rows');
+            if (data.alerts.length === 0) {
+                alertBody.innerHTML = '<tr><td colspan="5" class="empty">No alerts</td></tr>';
+            } else {
+                alertBody.innerHTML = data.alerts.map(a => `
+                    <tr>
+                        <td>${a.table_name}</td>
+                        <td><span class="badge ${a.change_type === 'COLUMN_REMOVED' ? 'red' : 'yellow'}">${a.change_type}</span></td>
+                        <td>${a.details}</td>
+                        <td>${a.detected_at ? a.detected_at.substring(0, 19) : '-'}</td>
+                        <td><span class="badge ${a.resolved ? 'green' : 'yellow'}">${a.resolved ? 'RESOLVED' : 'OPEN'}</span></td>
+                    </tr>
+                `).join('');
+            }
+
+            // change log
+            const changeBody = document.getElementById('schema-change-rows');
+            if (data.changes.length === 0) {
+                changeBody.innerHTML = '<tr><td colspan="8" class="empty">No changes</td></tr>';
+            } else {
+                changeBody.innerHTML = data.changes.map(c => `
+                    <tr>
+                        <td>${c.table_name}</td>
+                        <td>${c.source}</td>
+                        <td><span class="badge ${c.change_type === 'COLUMN_ADDED' ? 'green' : c.change_type === 'COLUMN_REMOVED' ? 'red' : 'yellow'}">${c.change_type}</span></td>
+                        <td>${c.column_name}</td>
+                        <td>${c.old_type || '-'}</td>
+                        <td>${c.new_type || '-'}</td>
+                        <td><span class="badge ${c.auto_migrated ? 'green' : 'yellow'}">${c.auto_migrated ? 'YES' : 'NO'}</span></td>
+                        <td>${c.detected_at ? c.detected_at.substring(0, 19) : '-'}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // registry
+            const regBody = document.getElementById('schema-registry-rows');
+            if (data.registry.length === 0) {
+                regBody.innerHTML = '<tr><td colspan="5" class="empty">No schemas registered</td></tr>';
+            } else {
+                regBody.innerHTML = data.registry.map(r => `
+                    <tr>
+                        <td>${r.table_name}</td>
+                        <td>${r.source}</td>
+                        <td>v${r.version}</td>
+                        <td><span class="badge ${r.is_current ? 'green' : 'blue'}">${r.is_current ? 'CURRENT' : 'OLD'}</span></td>
+                        <td>${r.detected_at ? r.detected_at.substring(0, 19) : '-'}</td>
+                    </tr>
+                `).join('');
+            }
+        }
 
         loadChart();
         loadAnomalies();
+        loadSchemaData();
      </script>
             </tbody>
         </table>
