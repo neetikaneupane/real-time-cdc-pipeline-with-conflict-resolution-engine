@@ -280,6 +280,25 @@
             </tbody>
         </table>
     </div>
+    <!-- Schema Divergence -->
+    <div class="section">
+        <h2>Cross-Source Schema Divergence</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Column</th>
+                    <th>SOURCE_A Type</th>
+                    <th>SOURCE_B Type</th>
+                    <th>Detected At</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="divergence-rows">
+                <tr><td colspan="6" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
 
     <!-- Schema Change Log -->
     <div class="section">
@@ -510,10 +529,32 @@
                 `).join('');
             }
         }
+        async function loadDivergence() {
+            const res  = await fetch('/schema/divergence');
+            const data = await res.json();
+            const tbody = document.getElementById('divergence-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">No divergence detected</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(d => `
+                <tr>
+                    <td>${d.table_name}</td>
+                    <td>${d.column_name}</td>
+                    <td><span class="badge blue">${d.source_a_type}</span></td>
+                    <td><span class="badge purple">${d.source_b_type}</span></td>
+                    <td>${d.detected_at ? d.detected_at.substring(0, 19) : '-'}</td>
+                    <td><span class="badge ${d.resolved ? 'green' : 'red'}">${d.resolved ? 'RESOLVED' : 'OPEN'}</span></td>
+                </tr>
+            `).join('');
+        }
 
         loadChart();
         loadAnomalies();
         loadSchemaData();
+        loadDivergence();
      </script>
             </tbody>
         </table>

@@ -396,3 +396,45 @@ def unfreeze_table(table_name: str):
         "table_name": table_name,
         "unfrozen_at": datetime.now(timezone.utc).isoformat()
     }
+
+@app.get("/schema/divergence")
+def schema_divergence():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT table_name, column_name, source_a_type,
+               source_b_type, detected_at, resolved
+        FROM schema_divergence
+        ORDER BY detected_at DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "table_name":    r[0],
+            "column_name":   r[1],
+            "source_a_type": r[2],
+            "source_b_type": r[3],
+            "detected_at":   r[4],
+            "resolved":      r[5]
+        }
+        for r in rows
+    ]
+
+@app.post("/schema/divergence/{table_name}/{column_name}/resolve")
+def resolve_divergence(table_name: str, column_name: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE schema_divergence
+        SET resolved = true, resolved_at = NOW()
+        WHERE table_name = %s
+        AND column_name = %s
+        AND resolved = false
+    """, (table_name, column_name))
+    conn.commit()
+    conn.close()
+    return {
+        "message":     f"Divergence resolved for {table_name}.{column_name}",
+        "resolved_at": datetime.now(timezone.utc).isoformat()
+    }
