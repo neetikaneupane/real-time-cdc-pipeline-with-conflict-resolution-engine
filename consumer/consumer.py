@@ -275,14 +275,25 @@ for message in consumer:
         strategy   = table_cfg['strategy']
 
         # check for schema changes on every message
-        check_and_update_schema(
-            cursor         = cursor,
-            dest_cursor    = migration_cursor,
-            table_name     = table_name,
-            source         = source,
-            dest_table     = table_cfg['destination_table'],
+        # check for schema changes on every message
+        from schema_registry import is_table_frozen
+        changes, table_frozen = check_and_update_schema(
+            cursor           = cursor,
+            dest_cursor      = migration_cursor,
+            table_name       = table_name,
+            source           = source,
+            dest_table       = table_cfg['destination_table'],
             debezium_message = message.value
         )
+
+        # circuit breaker — skip processing if table is frozen
+        if is_table_frozen(cursor, table_name):
+            print(f"  [SCHEMA] CIRCUIT BREAKER: {table_name} is frozen "
+                  f"— skipping message until alert is resolved")
+            write_dlq(message, Exception(
+                f"Table {table_name} frozen due to dangerous schema change"
+            ), retryable=True)
+            continue
 
         is_conflict, sources = check_conflict(table_name, pk_value, source, after)
 

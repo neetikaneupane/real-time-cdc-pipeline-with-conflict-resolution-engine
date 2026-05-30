@@ -204,32 +204,32 @@ def validate_message(event, current_schema):
 
 # ─── Auto-Resolve Alerts ──────────────────────────────────
 def auto_resolve_alerts(cursor, table_name, current_schema):
-    """
-    If a previously removed column reappears, auto-resolve its alert.
-    If a type change reverts, auto-resolve its alert.
-    """
     cursor.execute("""
-        SELECT id, change_type, column_name, details
+        SELECT id, change_type, details
         FROM schema_change_alerts
         WHERE table_name = %s AND resolved = false
     """, (table_name,))
     open_alerts = cursor.fetchall()
 
     for alert in open_alerts:
-        alert_id     = alert[0]
-        change_type  = alert[1]
-        column_name  = alert[2]
+        alert_id    = alert[0]
+        change_type = alert[1]
+        details     = alert[2]
 
         if change_type == 'COLUMN_REMOVED':
-            # check if column reappeared
-            if column_name in current_schema:
-                cursor.execute("""
-                    UPDATE schema_change_alerts
-                    SET resolved = true
-                    WHERE id = %s
-                """, (alert_id,))
-                print(f"  [SCHEMA] Alert auto-resolved: "
-                      f"{column_name} reappeared in {table_name}")
+            # extract column name from details string
+            try:
+                column_name = details.split("'")[1]
+                if column_name in current_schema:
+                    cursor.execute("""
+                        UPDATE schema_change_alerts
+                        SET resolved = true
+                        WHERE id = %s
+                    """, (alert_id,))
+                    print(f"  [SCHEMA] Alert auto-resolved: "
+                          f"{column_name} reappeared in {table_name}")
+            except Exception:
+                pass
 
 
 # ─── Backfill Engine ──────────────────────────────────────

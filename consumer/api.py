@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import psycopg2
+from datetime import datetime, timezone
 
 app = FastAPI(title="CDC Pipeline API")
 templates = Jinja2Templates(directory="templates")
@@ -350,4 +351,48 @@ def schema_history():
             }
             for r in alerts
         ]
+    }
+
+@app.post("/schema/unfreeze/{table_name}")
+def unfreeze_table(table_name: str):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # check if frozen
+    cur.execute("""
+        SELECT frozen, frozen_reason
+        FROM schema_circuit_breaker
+        WHERE table_name = %s
+    """, (table_name,))
+    row = cur.fetchone()
+
+    if not row:
+        conn.close()
+        return {"error": f"No circuit breaker found for {table_name}"}
+
+    if not row[0]:
+        conn.close()
+        return {"message": f"{table_name} is not frozen"}
+
+    # unfreeze
+    cur.execute("""
+        UPDATE schema_circuit_breaker
+        SET frozen = false, unfrozen_at = NOW()
+        WHERE table_name = %s
+    """, (table_name,))
+
+    # resolve all open alerts for this table
+    cur.execute("""
+        UPDATE schema_change_alerts
+        SET resolved = true
+        WHERE table_name = %s AND resolved = false
+    """, (table_name,))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "message":    f"{table_name} unfrozen successfully",
+        "table_name": table_name,
+        "unfrozen_at": datetime.now(timezone.utc).isoformat()
     }
