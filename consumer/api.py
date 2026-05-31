@@ -438,3 +438,61 @@ def resolve_divergence(table_name: str, column_name: str):
         "message":     f"Divergence resolved for {table_name}.{column_name}",
         "resolved_at": datetime.now(timezone.utc).isoformat()
     }
+@app.get("/anomalies/composite")
+def get_composite_anomalies():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, table_name, severity, composite_score,
+               peak_score, signals_fired, started_at,
+               ended_at, duration_seconds, resolved
+        FROM composite_anomalies
+        ORDER BY started_at DESC
+        LIMIT 20
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "id":               r[0],
+            "table_name":       r[1],
+            "severity":         r[2],
+            "composite_score":  r[3],
+            "peak_score":       r[4],
+            "signals_fired":    r[5],
+            "started_at":       r[6],
+            "ended_at":         r[7],
+            "duration_seconds": r[8],
+            "resolved":         r[9]
+        }
+        for r in rows
+    ]
+
+
+@app.get("/anomalies/signals")
+def get_signal_history():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT table_name, signal_type, value,
+               baseline_mean, deviation_score,
+               severity, recorded_at
+        FROM anomaly_signals
+        WHERE recorded_at > NOW() - INTERVAL '2 hours'
+        ORDER BY recorded_at DESC
+        LIMIT 50
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "table_name":     r[0],
+            "signal_type":    r[1],
+            "value":          r[2],
+            "baseline_mean":  r[3],
+            "deviation_score": r[4],
+            "severity":       r[5],
+            "recorded_at":    r[6]
+        }
+        for r in rows
+    ]

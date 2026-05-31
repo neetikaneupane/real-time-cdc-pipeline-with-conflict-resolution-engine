@@ -366,6 +366,48 @@
             </tbody>
         </table>
     </div>
+    <!-- Composite Anomalies -->
+    <div class="section">
+        <h2>Composite Anomaly History</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Severity</th>
+                    <th>Composite Score</th>
+                    <th>Peak Score</th>
+                    <th>Signals</th>
+                    <th>Duration</th>
+                    <th>Started At</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="composite-anomaly-rows">
+                <tr><td colspan="8" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Signal History -->
+    <div class="section">
+        <h2>Signal History — Last 2 Hours</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Signal</th>
+                    <th>Value</th>
+                    <th>Baseline</th>
+                    <th>Deviation</th>
+                    <th>Severity</th>
+                    <th>Recorded At</th>
+                </tr>
+            </thead>
+            <tbody id="signal-history-rows">
+                <tr><td colspan="7" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
 
      <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
      <script>
@@ -550,11 +592,59 @@
                 </tr>
             `).join('');
         }
+        async function loadCompositeAnomalies() {
+            const res  = await fetch('/anomalies/composite');
+            const data = await res.json();
+            const tbody = document.getElementById('composite-anomaly-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No composite anomalies</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(a => `
+                <tr>
+                    <td>${a.table_name}</td>
+                    <td><span class="badge ${a.severity === 'CRITICAL' ? 'red' : 'yellow'}">${a.severity}</span></td>
+                    <td>${a.composite_score ? a.composite_score.toFixed(2) : '-'}</td>
+                    <td>${a.peak_score ? a.peak_score.toFixed(2) : '-'}</td>
+                    <td>${a.signals_fired ? JSON.parse(a.signals_fired).join(', ') : '-'}</td>
+                    <td>${a.duration_seconds ? Math.round(a.duration_seconds / 60) + ' min' : '-'}</td>
+                    <td>${a.started_at ? a.started_at.substring(0, 19) : '-'}</td>
+                    <td><span class="badge ${a.resolved ? 'green' : 'red'}">${a.resolved ? 'RESOLVED' : 'ACTIVE'}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadSignalHistory() {
+            const res  = await fetch('/anomalies/signals');
+            const data = await res.json();
+            const tbody = document.getElementById('signal-history-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No signal data yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(s => `
+                <tr>
+                    <td>${s.table_name}</td>
+                    <td>${s.signal_type}</td>
+                    <td>${s.value ? s.value.toFixed(3) : '-'}</td>
+                    <td>${s.baseline_mean ? s.baseline_mean.toFixed(3) : '-'}</td>
+                    <td>${s.deviation_score ? s.deviation_score.toFixed(2) + 'σ' : '-'}</td>
+                    <td><span class="badge ${s.severity === 'CRITICAL' ? 'red' : s.severity === 'WARNING' ? 'yellow' : 'green'}">${s.severity || 'NORMAL'}</span></td>
+                    <td>${s.recorded_at ? s.recorded_at.substring(0, 19) : '-'}</td>
+                </tr>
+            `).join('');
+        }
 
         loadChart();
         loadAnomalies();
         loadSchemaData();
         loadDivergence();
+        loadCompositeAnomalies();
+        loadSignalHistory();
      </script>
             </tbody>
         </table>
