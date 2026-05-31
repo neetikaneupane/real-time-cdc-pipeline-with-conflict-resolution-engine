@@ -77,6 +77,7 @@ def get_hourly_baseline(cursor, table_name, signal_type):
         WHERE table_name = %s
         AND signal_type = %s
         AND hour_of_day = %s
+        AND computed_at < NOW() - INTERVAL '5 minutes'
         ORDER BY computed_at DESC
         LIMIT 1
     """, (table_name, signal_type, current_hour))
@@ -124,6 +125,7 @@ def compute_hourly_baselines(cursor, table_name):
                         WHERE event_type = 'conflict_detected'
                         AND table_name = %s
                         AND EXTRACT(HOUR FROM recorded_at) = %s
+                        AND recorded_at < NOW() - INTERVAL '10 minutes'
                         GROUP BY DATE_TRUNC('minute', recorded_at)
                     )
                     SELECT
@@ -144,6 +146,7 @@ def compute_hourly_baselines(cursor, table_name):
                     AND table_name = %s
                     AND resolution_ms IS NOT NULL
                     AND EXTRACT(HOUR FROM recorded_at) = %s
+                    AND recorded_at < NOW() - INTERVAL '10 minutes'
                 """, (table_name, hour))
 
             elif signal_type == 'source_lag':
@@ -156,6 +159,7 @@ def compute_hourly_baselines(cursor, table_name):
                     WHERE table_name = %s
                     AND source_lag_ms IS NOT NULL
                     AND EXTRACT(HOUR FROM recorded_at) = %s
+                    AND recorded_at < NOW() - INTERVAL '10 minutes'
                 """, (table_name, hour))
 
             row = cursor.fetchone()
