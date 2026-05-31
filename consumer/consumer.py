@@ -194,19 +194,27 @@ def write_quarantine(resolution, table_cfg, pk_value):
 
 # ─── Write Conflict Metric ─────────────────────────────────
 def write_conflict_metric(table_name, event_type, strategy=None,
-                          resolution_ms=None, pk_value=None, winning_source=None):
+                          resolution_ms=None, pk_value=None,
+                          winning_source=None, source_lag_ms=None):
+    # get current dlq count
+    cursor.execute("SELECT COUNT(*) FROM dead_letter_queue WHERE resolved=false")
+    dlq_count = cursor.fetchone()[0]
+
     cursor.execute("""
         INSERT INTO conflict_metrics
             (recorded_at, table_name, event_type, strategy,
-             resolution_ms, customer_id, winning_source)
-        VALUES (NOW(), %s, %s, %s, %s, %s, %s)
+             resolution_ms, customer_id, winning_source,
+             source_lag_ms, dlq_count_at_time)
+        VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         table_name,
         event_type,
         strategy,
         resolution_ms,
         pk_value,
-        winning_source
+        winning_source,
+        source_lag_ms,
+        dlq_count
     ))
 
 
@@ -308,13 +316,24 @@ for message in consumer:
             # calculate resolution time in milliseconds
             resolution_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
+            # calculate source lag
+            source_lag_ms = None
+            try:
+                event_ts = payload.get('source', {}).get('ts_ms')
+                if event_ts:
+                    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                    source_lag_ms = now_ms - event_ts
+            except Exception:
+                pass
+
             write_conflict_metric(
-                table_name    = table_name,
-                event_type    = 'conflict_detected',
-                strategy      = resolution['strategy'],
-                resolution_ms = resolution_ms,
-                pk_value      = pk_value,
-                winning_source= resolution['winning_source']
+                table_name     = table_name,
+                event_type     = 'conflict_detected',
+                strategy       = resolution['strategy'],
+                resolution_ms  = resolution_ms,
+                pk_value       = pk_value,
+                winning_source = resolution['winning_source'],
+                source_lag_ms  = source_lag_ms
             )
             print()
             del pending[table_name][pk_value]
