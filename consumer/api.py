@@ -496,3 +496,58 @@ def get_signal_history():
         }
         for r in rows
     ]
+
+@app.get("/lag/current")
+def get_current_lag():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT ON (topic, partition_id)
+            topic, partition_id, lag, log_end_offset,
+            committed_offset, recorded_at
+        FROM consumer_lag
+        ORDER BY topic, partition_id, recorded_at DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "topic":            r[0],
+            "partition_id":     r[1],
+            "lag":              r[2],
+            "log_end_offset":   r[3],
+            "committed_offset": r[4],
+            "recorded_at":      r[5],
+            "status": "CRITICAL" if r[2] >= 500
+                      else "WARNING" if r[2] >= 100
+                      else "OK"
+        }
+        for r in rows
+    ]
+
+
+@app.get("/lag/alerts")
+def get_lag_alerts():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT topic, partition_id, lag, severity,
+               fired_at, resolved, resolved_at
+        FROM lag_alerts
+        ORDER BY fired_at DESC
+        LIMIT 20
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "topic":        r[0],
+            "partition_id": r[1],
+            "lag":          r[2],
+            "severity":     r[3],
+            "fired_at":     r[4],
+            "resolved":     r[5],
+            "resolved_at":  r[6]
+        }
+        for r in rows
+    ]
