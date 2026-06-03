@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 KAFKA_BOOTSTRAP = 'localhost:9092'
-CONSUMER_GROUP  = 'cdc-lag-monitor'
+CONSUMER_GROUP = 'cdc-pipeline-consumer'
 
 TOPICS = [
     'source_a.public.customers',
@@ -192,5 +192,5 @@ scheduler.add_job(
     next_run_time=datetime.now()
 )
 
-print('Lag monitor started -- runs every 1 minute. Press Ctrl+C to stop.')
+print('Lag monitor started: runs every 1 minute. Press Ctrl+C to stop.')
 scheduler.start()

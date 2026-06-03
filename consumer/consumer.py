@@ -41,7 +41,9 @@ consumer = KafkaConsumer(
     *all_topics,
     bootstrap_servers='localhost:9092',
     auto_offset_reset='latest',
-    group_id=None,
+    group_id='cdc-pipeline-consumer',
+    enable_auto_commit=True,
+    auto_commit_interval_ms=1000,
     value_deserializer=lambda x: json.loads(x.decode('utf-8'))
 )
 
