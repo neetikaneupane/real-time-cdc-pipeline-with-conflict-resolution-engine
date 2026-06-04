@@ -551,3 +551,58 @@ def get_lag_alerts():
         }
         for r in rows
     ]
+
+@app.get("/health/score")
+def get_health_score():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT overall_score, health_status, lag_score, dlq_score,
+               conflict_score, resolution_score, lag_detail,
+               dlq_detail, conflict_detail, resolution_detail,
+               recorded_at
+        FROM pipeline_health
+        ORDER BY recorded_at DESC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return {"error": "No health data yet"}
+
+    return {
+        "overall_score":      row[0],
+        "health_status":      row[1],
+        "lag_score":          row[2],
+        "dlq_score":          row[3],
+        "conflict_score":     row[4],
+        "resolution_score":   row[5],
+        "lag_detail":         row[6],
+        "dlq_detail":         row[7],
+        "conflict_detail":    row[8],
+        "resolution_detail":  row[9],
+        "recorded_at":        row[10]
+    }
+
+
+@app.get("/health/score/history")
+def get_health_score_history():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT overall_score, health_status, recorded_at
+        FROM pipeline_health
+        ORDER BY recorded_at DESC
+        LIMIT 60
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "overall_score": r[0],
+            "health_status": r[1],
+            "recorded_at":   r[2]
+        }
+        for r in rows
+    ]
