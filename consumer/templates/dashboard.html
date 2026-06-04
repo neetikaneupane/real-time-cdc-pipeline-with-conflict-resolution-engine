@@ -408,6 +408,97 @@
             </tbody>
         </table>
     </div>
+    <!-- Pipeline Health Score -->
+    <div class="section">
+        <h2>Pipeline Health Score</h2>
+        <div id="health-score-container">
+            <div class="empty">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Kafka Consumer Lag -->
+    <div class="section">
+        <h2>Kafka Consumer Lag</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Topic</th>
+                    <th>Partition</th>
+                    <th>Lag</th>
+                    <th>Log End Offset</th>
+                    <th>Committed Offset</th>
+                    <th>Status</th>
+                    <th>Recorded At</th>
+                </tr>
+            </thead>
+            <tbody id="lag-rows">
+                <tr><td colspan="7" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Lag Alerts -->
+    <div class="section">
+        <h2>Lag Alert History</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Topic</th>
+                    <th>Partition</th>
+                    <th>Lag</th>
+                    <th>Severity</th>
+                    <th>Fired At</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="lag-alert-rows">
+                <tr><td colspan="6" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Conflict Forecasts -->
+    <div class="section">
+        <h2>Conflict Rate Forecasts</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Current Rate</th>
+                    <th>Predicted Rate</th>
+                    <th>Slope</th>
+                    <th>Horizon</th>
+                    <th>Confidence</th>
+                    <th>Severity</th>
+                    <th>Recorded At</th>
+                </tr>
+            </thead>
+            <tbody id="forecast-rows">
+                <tr><td colspan="8" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Forecast Alerts -->
+    <div class="section">
+        <h2>Forecast Alert History</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table</th>
+                    <th>Current Rate</th>
+                    <th>Predicted Rate</th>
+                    <th>Horizon</th>
+                    <th>Severity</th>
+                    <th>Fired At</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="forecast-alert-rows">
+                <tr><td colspan="7" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
 
      <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
      <script>
@@ -638,6 +729,152 @@
                 </tr>
             `).join('');
         }
+        async function loadHealthScore() {
+            const res  = await fetch('/health/score');
+            const data = await res.json();
+            const container = document.getElementById('health-score-container');
+
+            if (data.error) {
+                container.innerHTML = '<div class="empty">No health data yet</div>';
+                return;
+            }
+
+            const statusColor = data.health_status === 'HEALTHY' ? 'green'
+                              : data.health_status === 'DEGRADED' ? 'yellow'
+                              : 'red';
+
+            container.innerHTML = `
+                <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+                    <div class="card" style="flex:1;min-width:140px">
+                        <div class="label">Overall Score</div>
+                        <div class="value ${statusColor}">${data.overall_score} / 100</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px">
+                        <div class="label">Status</div>
+                        <div class="value ${statusColor}">${data.health_status}</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px">
+                        <div class="label">Lag Score</div>
+                        <div class="value">${data.lag_score} / 40</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px">
+                        <div class="label">DLQ Score</div>
+                        <div class="value">${data.dlq_score} / 20</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px">
+                        <div class="label">Conflict Score</div>
+                        <div class="value">${data.conflict_score} / 20</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px">
+                        <div class="label">Resolution Score</div>
+                        <div class="value">${data.resolution_score} / 20</div>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>Component</th><th>Detail</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Lag</td><td>${data.lag_detail}</td></tr>
+                        <tr><td>DLQ</td><td>${data.dlq_detail}</td></tr>
+                        <tr><td>Conflict Rate</td><td>${data.conflict_detail}</td></tr>
+                        <tr><td>Resolution Time</td><td>${data.resolution_detail}</td></tr>
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function loadLag() {
+            const res  = await fetch('/lag/current');
+            const data = await res.json();
+            const tbody = document.getElementById('lag-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No lag data yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.topic}</td>
+                    <td>${r.partition_id}</td>
+                    <td>${r.lag}</td>
+                    <td>${r.log_end_offset}</td>
+                    <td>${r.committed_offset}</td>
+                    <td><span class="badge ${r.status === 'OK' ? 'green' : r.status === 'WARNING' ? 'yellow' : 'red'}">${r.status}</span></td>
+                    <td>${r.recorded_at ? r.recorded_at.substring(0, 19) : '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadLagAlerts() {
+            const res  = await fetch('/lag/alerts');
+            const data = await res.json();
+            const tbody = document.getElementById('lag-alert-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">No lag alerts</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.topic}</td>
+                    <td>${r.partition_id}</td>
+                    <td>${r.lag}</td>
+                    <td><span class="badge ${r.severity === 'CRITICAL' ? 'red' : 'yellow'}">${r.severity}</span></td>
+                    <td>${r.fired_at ? r.fired_at.substring(0, 19) : '-'}</td>
+                    <td><span class="badge ${r.resolved ? 'green' : 'red'}">${r.resolved ? 'RESOLVED' : 'ACTIVE'}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadForecasts() {
+            const res  = await fetch('/forecasts/latest');
+            const data = await res.json();
+            const tbody = document.getElementById('forecast-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No forecast data yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.table_name}</td>
+                    <td>${r.current_rate}/min</td>
+                    <td>${r.predicted_rate}/min</td>
+                    <td>${r.slope > 0.1 ? 'up' : r.slope < -0.1 ? 'down' : 'stable'}</td>
+                    <td>${r.horizon_minutes} min</td>
+                    <td>${r.confidence}%</td>
+                    <td><span class="badge ${r.severity === 'CRITICAL' ? 'red' : r.severity === 'WARNING' ? 'yellow' : 'green'}">${r.severity || 'NORMAL'}</span></td>
+                    <td>${r.recorded_at ? r.recorded_at.substring(0, 19) : '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadForecastAlerts() {
+            const res  = await fetch('/forecasts/alerts');
+            const data = await res.json();
+            const tbody = document.getElementById('forecast-alert-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No forecast alerts</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.table_name}</td>
+                    <td>${r.current_rate}/min</td>
+                    <td>${r.predicted_rate}/min</td>
+                    <td>${r.horizon_minutes} min</td>
+                    <td><span class="badge ${r.severity === 'CRITICAL' ? 'red' : 'yellow'}">${r.severity}</span></td>
+                    <td>${r.fired_at ? r.fired_at.substring(0, 19) : '-'}</td>
+                    <td><span class="badge ${r.resolved ? 'green' : 'red'}">${r.resolved ? 'RESOLVED' : 'ACTIVE'}</span></td>
+                </tr>
+            `).join('');
+        }
 
         loadChart();
         loadAnomalies();
@@ -645,6 +882,11 @@
         loadDivergence();
         loadCompositeAnomalies();
         loadSignalHistory();
+        loadHealthScore();
+        loadLag();
+        loadLagAlerts();
+        loadForecasts();
+        loadForecastAlerts();
      </script>
             </tbody>
         </table>
