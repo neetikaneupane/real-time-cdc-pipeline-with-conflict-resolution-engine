@@ -499,6 +499,47 @@
             </tbody>
         </table>
     </div>
+    <!-- Replay Engine -->
+    <div class="section">
+        <h2>Replay Engine</h2>
+        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+            <div>
+                <div class="label" style="margin-bottom:4px">From Timestamp</div>
+                <input type="text" id="replay-from" placeholder="2026-05-31 04:00:00"
+                    style="background:#0f1117;border:1px solid #2d3148;color:#e2e8f0;
+                    padding:8px 12px;border-radius:6px;font-size:13px;width:220px">
+            </div>
+            <div>
+                <div class="label" style="margin-bottom:4px">To Timestamp (optional)</div>
+                <input type="text" id="replay-to" placeholder="2026-05-31 05:00:00"
+                    style="background:#0f1117;border:1px solid #2d3148;color:#e2e8f0;
+                    padding:8px 12px;border-radius:6px;font-size:13px;width:220px">
+            </div>
+            <button onclick="startReplay()"
+                style="background:#3b82f6;color:#fff;border:none;padding:8px 20px;
+                border-radius:6px;font-size:13px;cursor:pointer">
+                Start Replay
+            </button>
+        </div>
+        <div id="replay-status" style="font-size:13px;color:#64748b;margin-bottom:16px"></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Events Replayed</th>
+                    <th>Events Skipped</th>
+                    <th>Status</th>
+                    <th>Started At</th>
+                    <th>Completed At</th>
+                </tr>
+            </thead>
+            <tbody id="replay-history-rows">
+                <tr><td colspan="8" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
 
      <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
      <script>
@@ -875,6 +916,63 @@
                 </tr>
             `).join('');
         }
+        async function loadReplayHistory() {
+            const res   = await fetch('/replay/history');
+            const data  = await res.json();
+            const tbody = document.getElementById('replay-history-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No replays run yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.id}</td>
+                    <td>${r.from_timestamp ? r.from_timestamp.substring(0, 19) : '-'}</td>
+                    <td>${r.to_timestamp ? r.to_timestamp.substring(0, 19) : 'now'}</td>
+                    <td>${r.events_replayed}</td>
+                    <td>${r.events_skipped}</td>
+                    <td><span class="badge ${r.status === 'COMPLETED' ? 'green' : r.status === 'RUNNING' ? 'blue' : 'red'}">${r.status}</span></td>
+                    <td>${r.started_at ? r.started_at.substring(0, 19) : '-'}</td>
+                    <td>${r.completed_at ? r.completed_at.substring(0, 19) : '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function startReplay() {
+            const from_ts = document.getElementById('replay-from').value.trim();
+            const to_ts   = document.getElementById('replay-to').value.trim();
+            const status  = document.getElementById('replay-status');
+
+            if (!from_ts) {
+                status.textContent = 'From Timestamp is required.';
+                status.style.color = '#ef4444';
+                return;
+            }
+
+            status.textContent = 'Starting replay...';
+            status.style.color = '#64748b';
+
+            const body = { from_timestamp: from_ts };
+            if (to_ts) body.to_timestamp = to_ts;
+
+            const res  = await fetch('/replay/start', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(body)
+            });
+            const data = await res.json();
+
+            if (data.error) {
+                status.textContent = 'Error: ' + data.error;
+                status.style.color = '#ef4444';
+            } else {
+                status.textContent = 'Replay started. Refresh in a few seconds to see results.';
+                status.style.color = '#22c55e';
+                setTimeout(loadReplayHistory, 3000);
+            }
+        }
 
         loadChart();
         loadAnomalies();
@@ -887,6 +985,7 @@
         loadLagAlerts();
         loadForecasts();
         loadForecastAlerts();
+        loadReplayHistory();
      </script>
             </tbody>
         </table>

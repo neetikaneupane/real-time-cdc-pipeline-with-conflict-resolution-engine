@@ -664,3 +664,77 @@ def get_forecast_alerts():
         }
         for r in rows
     ]
+
+@app.get("/replay/history")
+def get_replay_history():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT id, started_at, completed_at, from_timestamp,
+               to_timestamp, topics, events_replayed,
+               events_skipped, status, error_message
+        FROM replay_history
+        ORDER BY started_at DESC
+        LIMIT 20
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "id":               r[0],
+            "started_at":       r[1],
+            "completed_at":     r[2],
+            "from_timestamp":   r[3],
+            "to_timestamp":     r[4],
+            "topics":           r[5],
+            "events_replayed":  r[6],
+            "events_skipped":   r[7],
+            "status":           r[8],
+            "error_message":    r[9]
+        }
+        for r in rows
+    ]
+
+
+@app.post("/replay/start")
+async def start_replay(request: Request):
+    body = await request.json()
+
+    from_ts_str = body.get('from_timestamp')
+    to_ts_str   = body.get('to_timestamp')
+    topics      = body.get('topics')
+
+    if not from_ts_str:
+        return {"error": "from_timestamp is required"}
+
+    try:
+        from datetime import datetime, timezone
+        from_ts = datetime.strptime(
+            from_ts_str, '%Y-%m-%d %H:%M:%S'
+        ).replace(tzinfo=timezone.utc)
+
+        to_ts = None
+        if to_ts_str:
+            to_ts = datetime.strptime(
+                to_ts_str, '%Y-%m-%d %H:%M:%S'
+            ).replace(tzinfo=timezone.utc)
+
+    except ValueError as e:
+        return {"error": f"Invalid timestamp format -- {e}"}
+
+    import threading
+    from replay_engine import run_replay
+
+    thread = threading.Thread(
+        target=run_replay,
+        args=(from_ts, to_ts, topics),
+        daemon=True
+    )
+    thread.start()
+
+    return {
+        "message":        "Replay started",
+        "from_timestamp": from_ts_str,
+        "to_timestamp":   to_ts_str,
+        "topics":         topics if topics else "all"
+    }
