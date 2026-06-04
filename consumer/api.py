@@ -606,3 +606,61 @@ def get_health_score_history():
         }
         for r in rows
     ]
+
+@app.get("/forecasts/latest")
+def get_latest_forecasts():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT ON (table_name)
+            table_name, current_rate, predicted_rate,
+            slope, horizon_minutes, confidence,
+            severity, data_points, recorded_at
+        FROM conflict_forecasts
+        ORDER BY table_name, recorded_at DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "table_name":       r[0],
+            "current_rate":     r[1],
+            "predicted_rate":   r[2],
+            "slope":            r[3],
+            "horizon_minutes":  r[4],
+            "confidence":       r[5],
+            "severity":         r[6],
+            "data_points":      r[7],
+            "recorded_at":      r[8]
+        }
+        for r in rows
+    ]
+
+
+@app.get("/forecasts/alerts")
+def get_forecast_alerts():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT table_name, current_rate, predicted_rate,
+               horizon_minutes, severity, fired_at,
+               resolved, resolved_at
+        FROM forecast_alerts
+        ORDER BY fired_at DESC
+        LIMIT 20
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "table_name":       r[0],
+            "current_rate":     r[1],
+            "predicted_rate":   r[2],
+            "horizon_minutes":  r[3],
+            "severity":         r[4],
+            "fired_at":         r[5],
+            "resolved":         r[6],
+            "resolved_at":      r[7]
+        }
+        for r in rows
+    ]
