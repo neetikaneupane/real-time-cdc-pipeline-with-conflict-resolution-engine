@@ -541,6 +541,46 @@
         </table>
     </div>
 
+    <!-- Consumer Throughput -->
+    <div class="section">
+        <h2>Consumer Throughput</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Topic</th>
+                    <th>Messages / Min</th>
+                    <th>Messages / Sec</th>
+                    <th>Peak / Sec</th>
+                    <th>Recorded At</th>
+                </tr>
+            </thead>
+            <tbody id="throughput-rows">
+                <tr><td colspan="5" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Throughput Alerts -->
+    <div class="section">
+        <h2>Throughput Alert History</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Topic</th>
+                    <th>Current mps</th>
+                    <th>Baseline mps</th>
+                    <th>Drop %</th>
+                    <th>Severity</th>
+                    <th>Fired At</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="throughput-alert-rows">
+                <tr><td colspan="7" class="empty">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
      <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
      <script>
         // ── Fetch timeseries and render chart ──────────────
@@ -973,6 +1013,49 @@
                 setTimeout(loadReplayHistory, 3000);
             }
         }
+        async function loadThroughput() {
+            const res   = await fetch('/throughput/current');
+            const data  = await res.json();
+            const tbody = document.getElementById('throughput-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty">No throughput data yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.topic}</td>
+                    <td>${r.messages_per_minute}</td>
+                    <td>${r.messages_per_second}</td>
+                    <td>${r.peak_per_second}</td>
+                    <td>${r.recorded_at ? r.recorded_at.substring(0, 19) : '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadThroughputAlerts() {
+            const res   = await fetch('/throughput/alerts');
+            const data  = await res.json();
+            const tbody = document.getElementById('throughput-alert-rows');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No throughput alerts</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.topic}</td>
+                    <td>${r.current_mps}</td>
+                    <td>${r.baseline_mps}</td>
+                    <td>${r.drop_percent ? round(r.drop_percent) + '%' : '-'}</td>
+                    <td><span class="badge ${r.severity === 'CRITICAL' ? 'red' : 'yellow'}">${r.severity}</span></td>
+                    <td>${r.fired_at ? r.fired_at.substring(0, 19) : '-'}</td>
+                    <td><span class="badge ${r.resolved ? 'green' : 'red'}">${r.resolved ? 'RESOLVED' : 'ACTIVE'}</span></td>
+                </tr>
+            `).join('');
+        }
 
         loadChart();
         loadAnomalies();
@@ -986,6 +1069,8 @@
         loadForecasts();
         loadForecastAlerts();
         loadReplayHistory();
+        loadThroughput();
+        loadThroughputAlerts();
      </script>
             </tbody>
         </table>

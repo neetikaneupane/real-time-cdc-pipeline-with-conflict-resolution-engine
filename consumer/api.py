@@ -738,3 +738,81 @@ async def start_replay(request: Request):
         "to_timestamp":   to_ts_str,
         "topics":         topics if topics else "all"
     }
+
+@app.get("/throughput/current")
+def get_current_throughput():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT ON (topic)
+            topic, messages_per_minute, messages_per_second,
+            peak_per_second, window_seconds, recorded_at
+        FROM throughput_metrics
+        ORDER BY topic, recorded_at DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "topic":               r[0],
+            "messages_per_minute": r[1],
+            "messages_per_second": r[2],
+            "peak_per_second":     r[3],
+            "window_seconds":      r[4],
+            "recorded_at":         r[5]
+        }
+        for r in rows
+    ]
+
+
+@app.get("/throughput/history")
+def get_throughput_history():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT topic, messages_per_minute, messages_per_second,
+               peak_per_second, recorded_at
+        FROM throughput_metrics
+        ORDER BY recorded_at DESC
+        LIMIT 50
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "topic":               r[0],
+            "messages_per_minute": r[1],
+            "messages_per_second": r[2],
+            "peak_per_second":     r[3],
+            "recorded_at":         r[4]
+        }
+        for r in rows
+    ]
+
+
+@app.get("/throughput/alerts")
+def get_throughput_alerts():
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT topic, current_mps, baseline_mps, drop_percent,
+               severity, fired_at, resolved, resolved_at
+        FROM throughput_alerts
+        ORDER BY fired_at DESC
+        LIMIT 20
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "topic":        r[0],
+            "current_mps":  r[1],
+            "baseline_mps": r[2],
+            "drop_percent": r[3],
+            "severity":     r[4],
+            "fired_at":     r[5],
+            "resolved":     r[6],
+            "resolved_at":  r[7]
+        }
+        for r in rows
+    ]
