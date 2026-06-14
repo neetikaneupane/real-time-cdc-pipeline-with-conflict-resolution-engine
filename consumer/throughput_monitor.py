@@ -3,10 +3,12 @@ import requests
 from datetime import datetime, timezone
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-THROUGHPUT_SERVER_URL  = 'http://localhost:9101/throughput'
-WINDOW_SECONDS         = 60
-DROP_WARNING_PERCENT   = 50
-DROP_CRITICAL_PERCENT  = 80
+THROUGHPUT_SERVER_URL = 'http://localhost:9101/throughput'
+WINDOW_SECONDS        = 60
+DROP_WARNING_PERCENT  = 50
+DROP_CRITICAL_PERCENT = 80
+MIN_BASELINE_MPS      = 0.05
+MIN_SAMPLES           = 3
 
 previous_counts = {}
 
@@ -30,18 +32,84 @@ def get_current_counts():
         return {}
 
 
-def get_baseline_mps(cursor, topic):
+def compute_hourly_baselines(cursor):
+    cursor.execute(
+        "SELECT DISTINCT topic FROM throughput_metrics"
+    )
+    topics = [row[0] for row in cursor.fetchall()]
+
+    for topic in topics:
+        for hour in range(24):
+            cursor.execute("""
+                SELECT
+                    COALESCE(AVG(messages_per_second), 0),
+                    COALESCE(STDDEV(messages_per_second), 0),
+                    COUNT(*)
+                FROM throughput_metrics
+                WHERE topic = %s
+                AND EXTRACT(HOUR FROM recorded_at) = %s
+                AND recorded_at < NOW() - INTERVAL '5 minutes'
+            """, (topic, hour))
+            row = cursor.fetchone()
+
+            if not row or int(row[2]) < MIN_SAMPLES:
+                continue
+
+            mean   = float(row[0])
+            stddev = float(row[1])
+            count  = int(row[2])
+
+            cursor.execute("""
+                INSERT INTO throughput_hourly_baselines
+                    (computed_at, topic, hour_of_day,
+                     mean_mps, stddev_mps, sample_count)
+                VALUES (NOW(), %s, %s, %s, %s, %s)
+            """, (topic, hour, mean, stddev, count))
+
+    print(f'  Hourly baselines recomputed for {len(topics)} topic(s)')
+
+
+def get_hourly_baseline(cursor, topic):
+    current_hour = datetime.now(timezone.utc).hour
+
     cursor.execute("""
-        SELECT AVG(messages_per_second)
-        FROM throughput_metrics
+        SELECT mean_mps, stddev_mps, sample_count
+        FROM throughput_hourly_baselines
         WHERE topic = %s
-        AND recorded_at > NOW() - INTERVAL '1 hour'
-        AND messages_per_second > 0
+        AND hour_of_day = %s
+        AND computed_at < NOW() - INTERVAL '5 minutes'
+        ORDER BY computed_at DESC
+        LIMIT 1
+    """, (topic, current_hour))
+    row = cursor.fetchone()
+
+    if row and int(row[2]) >= MIN_SAMPLES:
+        return float(row[0]), float(row[1]), int(row[2]), current_hour
+
+    cursor.execute("""
+        SELECT AVG(mean_mps), AVG(stddev_mps), SUM(sample_count)
+        FROM throughput_hourly_baselines
+        WHERE topic = %s
+        AND computed_at < NOW() - INTERVAL '5 minutes'
     """, (topic,))
     row = cursor.fetchone()
+
     if row and row[0]:
-        return float(row[0])
-    return None
+        return float(row[0]), float(row[1] or 0), int(row[2] or 0), None
+
+    cursor.execute("""
+        SELECT AVG(messages_per_second), STDDEV(messages_per_second), COUNT(*)
+        FROM throughput_metrics
+        WHERE topic = %s
+        AND messages_per_second > 0
+        AND recorded_at > NOW() - INTERVAL '1 hour'
+    """, (topic,))
+    row = cursor.fetchone()
+
+    if row and row[0]:
+        return float(row[0]), float(row[1] or 0), int(row[2] or 0), None
+
+    return None, None, 0, None
 
 
 def get_peak_mps(cursor, topic):
@@ -56,8 +124,7 @@ def get_peak_mps(cursor, topic):
     return 0.0
 
 
-def save_throughput(cursor, topic, messages_in_window,
-                    mps, peak_mps):
+def save_throughput(cursor, topic, messages_in_window, mps, peak_mps):
     cursor.execute("""
         INSERT INTO throughput_metrics
             (recorded_at, topic, messages_per_minute,
@@ -117,9 +184,10 @@ def run_throughput_monitor():
     conn.autocommit = True
     cursor = conn.cursor()
 
-    for topic, total_count in current_counts.items():
-        prev_count = previous_counts.get(topic, 0)
+    compute_hourly_baselines(cursor)
 
+    for topic, total_count in current_counts.items():
+        prev_count         = previous_counts.get(topic, 0)
         messages_in_window = total_count - prev_count
         if messages_in_window < 0:
             messages_in_window = total_count
@@ -130,18 +198,18 @@ def run_throughput_monitor():
 
         save_throughput(cursor, topic, messages_in_window, mps, peak_mps)
 
-        baseline_mps = get_baseline_mps(cursor, topic)
-        active       = get_active_alert(cursor, topic)
+        mean_mps, stddev_mps, sample_count, hour_used = get_hourly_baseline(
+            cursor, topic
+        )
 
+        active       = get_active_alert(cursor, topic)
         severity     = None
         drop_percent = 0
 
-        MIN_BASELINE_MPS = 0.05
-
-        if (baseline_mps and
-                baseline_mps >= MIN_BASELINE_MPS and
-                mps < baseline_mps):
-            drop_percent = ((baseline_mps - mps) / baseline_mps) * 100
+        if (mean_mps and
+                mean_mps >= MIN_BASELINE_MPS and
+                mps < mean_mps):
+            drop_percent = ((mean_mps - mps) / mean_mps) * 100
             if drop_percent >= DROP_CRITICAL_PERCENT:
                 severity = 'CRITICAL'
             elif drop_percent >= DROP_WARNING_PERCENT:
@@ -151,26 +219,37 @@ def run_throughput_monitor():
             if not active:
                 fire_alert(
                     cursor, topic, mps,
-                    baseline_mps, drop_percent, severity
+                    mean_mps, drop_percent, severity
                 )
             elif active[1] != severity:
                 resolve_alert(cursor, active[0])
                 fire_alert(
                     cursor, topic, mps,
-                    baseline_mps, drop_percent, severity
+                    mean_mps, drop_percent, severity
                 )
         else:
             if active:
                 resolve_alert(cursor, active[0])
                 print(f'  RESOLVED throughput alert for {topic}')
 
-        trend = 'up' if mps > (baseline_mps or 0) else 'down' if mps < (baseline_mps or 0) else 'stable'
+        baseline_label = (
+            f'{round(mean_mps, 4)} mps (hour={hour_used})'
+            if hour_used is not None
+            else f'{round(mean_mps, 4) if mean_mps else "building..."} mps (global fallback)'
+        )
+
+        trend = (
+            'up'     if mean_mps and mps > mean_mps
+            else 'down'   if mean_mps and mps < mean_mps
+            else 'stable'
+        )
 
         print(f'  {topic}')
         print(f'    Messages in window : {messages_in_window}')
         print(f'    Throughput         : {mps} msg/sec')
         print(f'    Peak               : {peak_mps} msg/sec')
-        print(f'    Baseline           : {round(baseline_mps, 4) if baseline_mps else "building..."}')
+        print(f'    Baseline           : {baseline_label}')
+        print(f'    Samples            : {sample_count}')
         print(f'    Trend              : {trend}')
         print(f'    Status             : {severity if severity else "OK"}')
 
