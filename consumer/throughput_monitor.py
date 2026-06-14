@@ -136,7 +136,11 @@ def run_throughput_monitor():
         severity     = None
         drop_percent = 0
 
-        if baseline_mps and baseline_mps > 0 and mps < baseline_mps:
+        MIN_BASELINE_MPS = 0.05
+
+        if (baseline_mps and
+                baseline_mps >= MIN_BASELINE_MPS and
+                mps < baseline_mps):
             drop_percent = ((baseline_mps - mps) / baseline_mps) * 100
             if drop_percent >= DROP_CRITICAL_PERCENT:
                 severity = 'CRITICAL'
