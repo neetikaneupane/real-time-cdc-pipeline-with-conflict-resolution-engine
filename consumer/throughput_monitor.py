@@ -219,7 +219,6 @@ def run_throughput_monitor():
         if severity:
             low_throughput_streak[topic] = low_throughput_streak.get(topic, 0) + 1
             streak = low_throughput_streak[topic]
-            print(f'    Low streak         : {streak}/{STREAK_THRESHOLD}')
 
             if streak >= STREAK_THRESHOLD:
                 if not active:
@@ -259,6 +258,9 @@ def run_throughput_monitor():
         print(f'    Samples            : {sample_count}')
         print(f'    Trend              : {trend}')
         print(f'    Status             : {severity if severity else "OK"}')
+        if severity:
+            streak = low_throughput_streak.get(topic, 0)
+            print(f'    Low streak         : {streak}/{STREAK_THRESHOLD}')
 
     previous_counts = dict(current_counts)
 
