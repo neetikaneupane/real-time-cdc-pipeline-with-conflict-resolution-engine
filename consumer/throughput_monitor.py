@@ -11,7 +11,8 @@ MIN_BASELINE_MPS      = 0.05
 MIN_SAMPLES           = 3
 
 previous_counts = {}
-
+low_throughput_streak = {}
+STREAK_THRESHOLD      = 3 
 
 def get_conn():
     return psycopg2.connect(
@@ -216,18 +217,24 @@ def run_throughput_monitor():
                 severity = 'WARNING'
 
         if severity:
-            if not active:
-                fire_alert(
-                    cursor, topic, mps,
-                    mean_mps, drop_percent, severity
-                )
-            elif active[1] != severity:
-                resolve_alert(cursor, active[0])
-                fire_alert(
-                    cursor, topic, mps,
-                    mean_mps, drop_percent, severity
-                )
+            low_throughput_streak[topic] = low_throughput_streak.get(topic, 0) + 1
+            streak = low_throughput_streak[topic]
+            print(f'    Low streak         : {streak}/{STREAK_THRESHOLD}')
+
+            if streak >= STREAK_THRESHOLD:
+                if not active:
+                    fire_alert(
+                        cursor, topic, mps,
+                        mean_mps, drop_percent, severity
+                    )
+                elif active[1] != severity:
+                    resolve_alert(cursor, active[0])
+                    fire_alert(
+                        cursor, topic, mps,
+                        mean_mps, drop_percent, severity
+                    )
         else:
+            low_throughput_streak[topic] = 0
             if active:
                 resolve_alert(cursor, active[0])
                 print(f'  RESOLVED throughput alert for {topic}')
