@@ -6,6 +6,10 @@ import psycopg2
 import yaml
 import traceback
 from schema_registry import check_and_update_schema
+from collections import Counter
+import threading
+import http.server
+import json as _json
 
 # ─── Load Table Config ─────────────────────────────────────
 with open('tables_config.yaml', 'r') as f:
@@ -47,8 +51,8 @@ consumer = KafkaConsumer(
     value_deserializer=lambda x: json.loads(x.decode('utf-8'))
 )
 
-pending = defaultdict(lambda: defaultdict(dict))
-CONFLICT_WINDOW_SECONDS = 60
+throughput_counts = Counter()
+throughput_lock   = threading.Lock()
 
 
 # ─── Helpers ───────────────────────────────────────────────
@@ -261,6 +265,33 @@ def write_dlq(message, error, retryable=True):
     ))
     print(f"  FAILED — written to DLQ (retryable={retryable})")
 
+class ThroughputHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/throughput':
+            with throughput_lock:
+                data = dict(throughput_counts)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(_json.dumps(data).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+def start_throughput_server():
+    server = http.server.HTTPServer(('localhost', 9101), ThroughputHandler)
+    server.serve_forever()
+
+throughput_thread = threading.Thread(
+    target=start_throughput_server,
+    daemon=True
+)
+throughput_thread.start()
+print('Throughput server running on http://localhost:9101/throughput')
+
 
 # ─── Main Loop ─────────────────────────────────────────────
 print("Listening for events... Press Ctrl+C to stop\n")
@@ -309,7 +340,7 @@ for message in consumer:
 
         if is_conflict:
             start_time = datetime.now(timezone.utc)
-            print(f"CONFLICT [{table_name}] — {pk}: {pk_value}")
+            print(f"CONFLICT [{table_name}] -- {pk}: {pk_value}")
             resolution = resolve_conflict(sources, strategy, table_cfg)
             print(f"  WINNER: {resolution['winning_source']} via {resolution['strategy']}")
             write_resolved(resolution, table_cfg)
@@ -340,8 +371,11 @@ for message in consumer:
             print()
             del pending[table_name][pk_value]
         else:
-            print(f"No conflict [{table_name}] — [{source}] {pk}: {pk_value}")
+            print(f"No conflict [{table_name}] -- [{source}] {pk}: {pk_value}")
             write_non_conflict(after, table_cfg, source)
+
+        with throughput_lock:
+            throughput_counts[topic] += 1
 
     except psycopg2.OperationalError as e:
         print(f"  DB CONNECTION ERROR — {e}")
